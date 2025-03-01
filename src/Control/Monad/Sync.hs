@@ -51,18 +51,11 @@ data SyncAction (s :: k) msg m next where
 deriving instance Functor (SyncAction k msg m)
 
 -- | Secret value computed by side @s'@. Side 's' is the side we are on.
-data Private s s' a where
-  Have :: a -> Private s s a
-  Haven't :: (s :~: s' -> Void) -> Private s s' a
+newtype Private s s' a = Private (s :~: s' -> a) deriving Functor
 
 -- | If we computed the secret value, we know it.
 fromPrivate :: Private s s a -> a
-fromPrivate (Have a) = a
-fromPrivate (Haven't f) = absurd (f Refl)
-
-instance Functor (Private s s') where
-  fmap f (Have a) = Have (f a)
-  fmap _ (Haven't r) = Haven't r
+fromPrivate (Private f) = f Refl
 
 -- | If we are side @s'@, compute the value and share it.
 sync :: (SingI (msg a), Functor m) => Sing s' -> (a -> msg a) -> (s ~ s' => m a) -> Sync s msg m a
@@ -97,6 +90,6 @@ runSync' sSide recv send (Sync (Free a)) = case a of
       msg <- recv sMsg
       runSync' sSide recv send (Sync $ next msg)
   CallPrivate s' f next -> case sSide %~ s' of
-    Proved Refl -> f Refl >>= runSync' sSide recv send . Sync . next . Have
-    Disproved g -> runSync' sSide recv send (Sync $ next (Haven't g))
+    Proved Refl -> f Refl >>= \x -> runSync' sSide recv send . Sync . next $ Private (\Refl -> x)
+    Disproved g -> runSync' sSide recv send (Sync $ next (Private (absurd . g)))
   CallUnsafeSync f next -> f sSide >>= runSync' sSide recv send . Sync . next
