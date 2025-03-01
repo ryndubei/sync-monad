@@ -4,12 +4,17 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Control.Monad.Sync (Sync, Private, fromPrivate, private, sync, unsafeSync, runSync) where
 
 import Data.Kind
 import Data.Singletons
 import Data.Type.Equality
 import Data.Void
+import Control.Monad.Free
+import Data.Singletons.Decide
 
 {- | @Sync s msg m a@ represents shared knowledge of type 'a', originating
  from a computation in the monad 'm', that may be sent using a message of
@@ -34,8 +39,16 @@ import Data.Void
  from the outside are either pure, or trivially the same
  (in the latter case, it's best to make the assertion explicit with 'unsafeSync')
 -}
-newtype Sync (s :: k) (msg :: Type -> Type) m a = Sync (m a)
+newtype Sync (s :: k) (msg :: Type -> Type) m a = Sync (Free (SyncAction s msg m) a)
   deriving (Functor, Applicative, Monad)
+  -- note that we aren't using FreeT, because this isn't a monad transformer!
+
+data SyncAction (s :: k) msg m next where
+  CallSync :: Sing (s' :: k) -> Sing (msg a) -> (a -> msg a) -> (s :~: s' -> m a) -> (a -> next) -> SyncAction s msg m next
+  CallPrivate :: Sing (s' :: k) -> (s :~: s' -> m a) -> (Private s s' a -> next) -> SyncAction s msg m next
+  CallUnsafeSync :: (Sing s -> m a) -> (a -> next) -> SyncAction s msg m next
+
+deriving instance Functor (SyncAction k msg m)
 
 -- | Secret value computed by side @s'@. Side 's' is the side we are on.
 data Private s s' a where
@@ -52,22 +65,38 @@ instance Functor (Private s s') where
   fmap _ (Haven't r) = Haven't r
 
 -- | If we are side @s'@, compute the value and share it.
-sync :: SingI (msg a) => Sing s' -> (a -> msg a) -> (s ~ s' => m a) -> Sync s msg m a
-sync sSide sMsg f = undefined
+sync :: (SingI (msg a), Functor m) => Sing s' -> (a -> msg a) -> (s ~ s' => m a) -> Sync s msg m a
+sync sSide (mkMsg :: (a -> msg a)) a = Sync . liftF $ CallSync sSide (sing :: Sing (msg a)) mkMsg (\Refl -> a) id
 
 -- | If we are side @s'@, compute the value, but don't share it.
-private :: Sing s' -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
-private s f = undefined
+private :: Functor m => Sing s' -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
+private sSide a = Sync . liftF $ CallPrivate sSide (\Refl -> a) id
 
 {- | Compute the value independently on all sides, and assert that it is the
  same without checking
 -}
 unsafeSync :: (Sing s -> m a) -> Sync s msg m a
-unsafeSync f = undefined
+unsafeSync f = Sync . liftF $ CallUnsafeSync f id
 
 {-
  Carry out a Sync computation, after specifying the side we are on and how to
  receive/send messages.
 -}
-runSync :: Sing side -> (forall x. Sing (msg x) -> m x) -> (forall x. msg x -> m ()) -> (forall s. Sync s msg m a) -> m a
-runSync s recv send snc = undefined
+runSync :: (Monad m, SDecide k) => Sing (side :: k) -> (forall x. Sing (msg x) -> m x) -> (forall x. msg x -> m ()) -> (forall (s :: k). Sync s msg m a) -> m a
+runSync = runSync'
+
+runSync' :: (Monad m, SDecide k) => Sing (side :: k) -> (forall x. Sing (msg x) -> m x) -> (forall x. msg x -> m ()) -> Sync side msg m a -> m a
+runSync' _ _ _ (Sync (Pure a)) = pure a
+runSync' sSide recv send (Sync (Free a)) = case a of
+  CallSync s' sMsg mkMsg f next -> case sSide %~ s' of
+    Proved Refl -> do
+      msg <- f Refl
+      send (mkMsg msg)
+      runSync' sSide recv send (Sync $ next msg)
+    Disproved _ -> do
+      msg <- recv sMsg
+      runSync' sSide recv send (Sync $ next msg)
+  CallPrivate s' f next -> case sSide %~ s' of
+    Proved Refl -> f Refl >>= runSync' sSide recv send . Sync . next . Have
+    Disproved g -> runSync' sSide recv send (Sync $ next (Haven't g))
+  CallUnsafeSync f next -> f sSide >>= runSync' sSide recv send . Sync . next

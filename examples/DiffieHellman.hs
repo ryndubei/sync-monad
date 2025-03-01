@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE EmptyCase #-}
 module Main (main) where
 
 import Crypto.PubKey.DH
@@ -17,6 +18,7 @@ import Control.Concurrent.STM
 import Data.Kind
 import Control.Monad.Trans.Class
 import Control.Exception
+import Data.Singletons.Decide
 
 
 data Side = A | B
@@ -32,7 +34,11 @@ instance SingI 'A where
 
 instance SingI 'B where
   sing = SB
-
+instance SDecide Side where
+  (%~) SA SA = Proved Refl
+  (%~) SB SB = Proved Refl
+  (%~) SA SB = Disproved $ \case {}
+  (%~) SB SA = Disproved $ \case {}
 
 data Msg a where
   PubKey :: PublicNumber -> Msg PublicNumber
