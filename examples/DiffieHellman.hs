@@ -115,15 +115,14 @@ sharedSecret = do
     putStrLn $ "A: Generated parameters: " ++ show p
     pure p
   
-  (_ :: Private s 'B ()) <- private SB $ do
+  _ <- private SB (Proxy :: Proxy ()) $ do
     putStrLn $ "B: Received DH parameters, they are: " ++ show params
-    pure ()
 
   -- A and B generate their keypairs
-  (privA :: Private s 'A PrivateNumber) <- private SA $ do
+  privA <- private SA (Proxy :: Proxy PrivateNumber) $ do
     putStrLn "A: Generating private key..."
     generatePrivate params
-  (privB :: Private s 'B PrivateNumber) <- private SB $ do
+  privB <- private SB (Proxy :: Proxy PrivateNumber) $ do
     putStrLn "B: Generating private key..."
     generatePrivate params
 

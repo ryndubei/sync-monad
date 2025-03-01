@@ -44,9 +44,9 @@ sharedSecret = do
   -- A decides on the parameters
   params <- sync SA DhParams (generateParams 128 2)
   
-  -- A and B generate their keypairs (the type signatures are mandatory,)
-  (privA :: Private s 'A PrivateNumber) <- private SA (generatePrivate params)
-  (privB :: Private s 'B PrivateNumber) <- private SB (generatePrivate params)
+  -- A and B generate their keypairs
+  privA <- private SA (Proxy :: Proxy PrivateNumber) (generatePrivate params)
+  privB <- private SB (Proxy :: Proxy PrivateNumber) (generatePrivate params)
 
   -- A and B share their public keys
   pubA <- sync SA PubKey $ pure (calculatePublic params (fromPrivate privA))

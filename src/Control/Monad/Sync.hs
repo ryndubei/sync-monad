@@ -62,8 +62,8 @@ sync :: (SingI (msg a), Functor m) => Sing s' -> (a -> msg a) -> (s ~ s' => m a)
 sync sSide (mkMsg :: (a -> msg a)) a = Sync . liftF $ CallSync sSide (sing :: Sing (msg a)) mkMsg (\Refl -> a) id
 
 -- | If we are side @s'@, compute the value, but don't share it.
-private :: Functor m => Sing s' -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
-private sSide a = Sync . liftF $ CallPrivate sSide (\Refl -> a) id
+private :: Functor m => Sing s' -> Proxy a -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
+private sSide _ a = Sync . liftF $ CallPrivate sSide (\Refl -> a) id
 
 {- | Compute the value independently on all sides, and assert that it is the
  same without checking
