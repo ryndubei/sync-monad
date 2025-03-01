@@ -25,3 +25,16 @@ library
                     , singletons
     hs-source-dirs:   src
     default-language: Haskell2010
+
+executable diffie-hellman
+    import:           warnings
+    hs-source-dirs:   examples
+    main-is:          DiffieHellman.hs
+    build-depends:    base
+                    , async >= 2.0.0.0
+                    , crypton
+                    , singletons
+                    , stm
+                    , sync-monad
+                    , transformers
+    default-language: Haskell2010
