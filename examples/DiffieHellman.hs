@@ -109,15 +109,31 @@ sendMessage q m = atomically $ writeTQueue q (Some m)
 sharedSecret :: Sync (s :: Side) Msg IO SharedKey
 sharedSecret = do
   -- A decides on the parameters
-  params <- sync SA DhParams (generateParams 128 2)
+  params <- sync SA DhParams $ do
+    putStrLn "A: Generating DH parameters..."
+    p <- generateParams 128 2
+    putStrLn $ "A: Generated parameters: " ++ show p
+    pure p
+  
+  (_ :: Private s 'B ()) <- private SB $ do
+    putStrLn $ "B: Received DH parameters, they are: " ++ show params
+    pure ()
 
   -- A and B generate their keypairs
-  (privA :: Private s 'A PrivateNumber) <- private SA (generatePrivate params)
-  (privB :: Private s 'B PrivateNumber) <- private SB (generatePrivate params)
+  (privA :: Private s 'A PrivateNumber) <- private SA $ do
+    putStrLn "A: Generating private key..."
+    generatePrivate params
+  (privB :: Private s 'B PrivateNumber) <- private SB $ do
+    putStrLn "B: Generating private key..."
+    generatePrivate params
 
   -- A and B share their public keys
-  pubA <- sync SA PubKey $ pure (calculatePublic params (fromPrivate privA))
-  pubB <- sync SB PubKey $ pure (calculatePublic params (fromPrivate privB))
+  pubA <- sync SA PubKey $ do
+    putStrLn "A: Sending public key..."
+    pure (calculatePublic params (fromPrivate privA))
+  pubB <- sync SB PubKey $ do
+    putStrLn "B: Sending public key..."
+    pure (calculatePublic params (fromPrivate privB))
 
   -- A and B compute the shared secret independently
   unsafeSync $ \case
