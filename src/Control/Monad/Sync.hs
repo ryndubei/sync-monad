@@ -7,7 +7,8 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Control.Monad.Sync (Sync, Private, fromPrivate, private, sync, unsafeSync, runSync) where
+{-# LANGUAGE NamedFieldPuns #-}
+module Control.Monad.Sync (Interpreter(..), Sync, Private, fromPrivate, private, sync, unsafeSync, runSync) where
 
 import Data.Kind
 import Data.Singletons
@@ -71,25 +72,31 @@ private sSide _ a = Sync . liftF $ CallPrivate sSide (\Refl -> a) id
 unsafeSync :: (Sing s -> m a) -> Sync s msg m a
 unsafeSync f = Sync . liftF $ CallUnsafeSync f id
 
+data Interpreter side msg m = Interpreter
+  { side :: !(Sing side)
+  , send :: forall x. msg x -> m ()
+  , recv :: forall x. Sing (msg x) -> m x
+  }
+
 {-
  Carry out a Sync computation, after specifying the side we are on and how to
  receive/send messages.
 -}
-runSync :: (Monad m, SDecide k) => Sing (side :: k) -> (forall x. Sing (msg x) -> m x) -> (forall x. msg x -> m ()) -> (forall (s :: k). Sync s msg m a) -> m a
+runSync :: (Monad m, SDecide k) => Interpreter (side :: k) msg m -> (forall (s :: k). Sync s msg m a) -> m a
 runSync = runSync'
 
-runSync' :: (Monad m, SDecide k) => Sing (side :: k) -> (forall x. Sing (msg x) -> m x) -> (forall x. msg x -> m ()) -> Sync side msg m a -> m a
-runSync' _ _ _ (Sync (Pure a)) = pure a
-runSync' sSide recv send (Sync (Free a)) = case a of
-  CallSync s' sMsg mkMsg f next -> case sSide %~ s' of
+runSync' :: (Monad m, SDecide k) => Interpreter (side :: k) msg m -> Sync side msg m a -> m a
+runSync' _ (Sync (Pure a)) = pure a
+runSync' itp@Interpreter{side, send, recv} (Sync (Free a)) = case a of
+  CallSync s' sMsg mkMsg f next -> case side %~ s' of
     Proved Refl -> do
       msg <- f Refl
       send (mkMsg msg)
-      runSync' sSide recv send (Sync $ next msg)
+      runSync' itp (Sync $ next msg)
     Disproved _ -> do
       msg <- recv sMsg
-      runSync' sSide recv send (Sync $ next msg)
-  CallPrivate s' f next -> case sSide %~ s' of
-    Proved Refl -> f Refl >>= \x -> runSync' sSide recv send . Sync . next $ Private (\Refl -> x)
-    Disproved g -> runSync' sSide recv send (Sync $ next (Private (absurd . g)))
-  CallUnsafeSync f next -> f sSide >>= runSync' sSide recv send . Sync . next
+      runSync' itp (Sync $ next msg)
+  CallPrivate s' f next -> case side %~ s' of
+    Proved Refl -> f Refl >>= \x -> runSync' itp . Sync . next $ Private (\Refl -> x)
+    Disproved g -> runSync' itp (Sync $ next (Private (absurd . g)))
+  CallUnsafeSync f next -> f side >>= runSync' itp . Sync . next

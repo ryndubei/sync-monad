@@ -85,13 +85,25 @@ main = evalContT $ do
     then lift $ putStrLn "Shared secret is the same"
     else lift $ putStrLn "(!!!) Shared secrets are different"
 
+aInterpreter :: CommsHandle -> Interpreter 'A Msg IO
+aInterpreter CommsHandle{msgsToA, msgsToB} = Interpreter
+  { side = SA
+  , send = sendMessage msgsToB
+  , recv = receiveMessage msgsToA
+  }
+
+bInterpreter :: CommsHandle -> Interpreter 'B Msg IO
+bInterpreter CommsHandle{msgsToA, msgsToB} = Interpreter
+  { side = SB
+  , send = sendMessage msgsToA
+  , recv = receiveMessage msgsToB
+  }
 
 mainA :: CommsHandle -> IO SharedKey
-mainA CommsHandle{msgsToA, msgsToB} = runSync SA (receiveMessage msgsToA) (sendMessage msgsToB) sharedSecret
+mainA h = runSync (aInterpreter h) sharedSecret
 
 mainB :: CommsHandle -> IO SharedKey
-mainB CommsHandle{msgsToA, msgsToB} = runSync SB (receiveMessage msgsToB) (sendMessage msgsToA) sharedSecret
-
+mainB h = runSync (bInterpreter h) sharedSecret
 
 receiveMessage :: TQueue (Some Msg) -> Sing (Msg a) -> IO a
 receiveMessage q s = do
@@ -114,7 +126,7 @@ sharedSecret = do
     p <- generateParams 128 2
     putStrLn $ "A: Generated parameters: " ++ show p
     pure p
-  
+
   _ <- private SB (Proxy :: Proxy ()) $ do
     putStrLn $ "B: Received DH parameters, they are: " ++ show params
 
