@@ -2,7 +2,7 @@
 
 A very basic, unintentional and independent reinvention of
 _functional choreographic programming_. Use
-[HasChor](https://hackage.haskell.org/package/HasChor)[^1] instead, unless you
+[HasChor](https://hackage.haskell.org/package/HasChor) instead, unless you
 really need to use GHC 8.10.7.
 
 ## Example: Diffie-Hellman key exchange
