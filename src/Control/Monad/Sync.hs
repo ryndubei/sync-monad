@@ -8,6 +8,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 module Control.Monad.Sync (Interpreter(..), Sync, Private, fromPrivate, private, sync, unsafeSync, runSync) where
 
 import Data.Kind
@@ -48,11 +50,26 @@ data SyncAction (s :: k) msg m next where
   CallSync :: Sing (s' :: k) -> Sing (msg a) -> (a -> msg a) -> (s :~: s' -> m a) -> (a -> next) -> SyncAction s msg m next
   CallPrivate :: Sing (s' :: k) -> (s :~: s' -> m a) -> (Private s s' a -> next) -> SyncAction s msg m next
   CallUnsafeSync :: (Sing s -> m a) -> (a -> next) -> SyncAction s msg m next
+  CallShare :: Sing (s1 :: k)
+            -> Sing (s2 :: k)
+            -> Proxy (ss :: [k])
+            -> Proxy a
+            -> (s :~: s1 -> m (msg (MultiPrivate s ss a)))
+            -> (MultiPrivate s (s2 ': ss) a -> next)
+            -> SyncAction s msg m next
 
 deriving instance Functor (SyncAction k msg m)
 
 -- | Secret value computed by side @s'@. Side 's' is the side we are on.
 newtype Private s s' a = Private (s :~: s' -> a) deriving Functor
+
+coercePrivate :: Private s s a -> Private s s' a
+coercePrivate (Private f) = Private (\Refl -> f Refl)
+
+type family MultiPrivate s (ss :: [k]) (a :: Type) :: Type where
+  MultiPrivate s1 '[s2] a = Private s1 s2 a
+  MultiPrivate s1 (s1 ': s2 ': ss) a = Private s1 s1 a
+  MultiPrivate s1 (s2 ': s3 ': ss) a = MultiPrivate s1 (s3 ': ss) a 
 
 -- | If we computed the secret value, we know it.
 fromPrivate :: Private s s a -> a
