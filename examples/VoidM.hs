@@ -7,6 +7,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE PolyKinds #-}
 module Main (main) where
 
 import Control.Monad.Sync
@@ -33,21 +34,27 @@ data SSide (s :: Side) where
 
 type instance Sing = SSide
 
+instance SingI 'A where
+  sing = SA
+
+instance SingI 'B where
+  sing = SB
+
 instance SDecide Side where
   SA %~ SA = Proved Refl
   SB %~ SB = Proved Refl
   SA %~ SB = Disproved $ \case {}
   SB %~ SA = Disproved $ \case {}
 
-data Msg a where
-  Msg :: Int -> Msg Int
+data Msg s a where
+  Msg :: Int -> Msg s Int
 
 data SMsg (a :: Type) where
-  SMsg :: SMsg (Msg Int)
+  SMsg :: Sing s -> SMsg (Msg s Int)
 
 type instance Sing = SMsg
-instance SingI (Msg Int) where
-  sing = SMsg
+instance SingI s => SingI (Msg s Int) where
+  sing = SMsg sing
 
 newtype AM s a = AM { unam :: If (s == 'A) (IO a) (VoidM a) }
 
@@ -71,8 +78,8 @@ itp = Interpreter
   { side = SA
   , send = \case
       Msg i -> AM (putStrLn $ "Pretending to send message: " ++ show i)
-  , recv = \case
-      SMsg -> do
+  , recv = \ _ SB -> \case
+      SMsg _ -> do
         AM (putStrLn "Pretending to receive message...")
         pure 27
   }

@@ -19,6 +19,7 @@ import Data.Kind
 import Control.Monad.Trans.Class
 import Control.Exception
 import Data.Singletons.Decide
+import Data.Void
 
 
 data Side = A | B
@@ -40,21 +41,21 @@ instance SDecide Side where
   (%~) SA SB = Disproved $ \case {}
   (%~) SB SA = Disproved $ \case {}
 
-data Msg a where
-  PubKey :: PublicNumber -> Msg PublicNumber
-  DhParams :: Params -> Msg Params
+data Msg s a where
+  PubKey :: PublicNumber -> Msg s PublicNumber
+  DhParams :: Params -> Msg s Params
 
 data SMsg (a :: Type) where
-  SPubKey :: SMsg (Msg PublicNumber)
-  SDhParams :: SMsg (Msg Params)
+  SPubKey :: Sing s -> SMsg (Msg s PublicNumber)
+  SDhParams :: Sing s -> SMsg (Msg s Params)
 
 type instance Sing = SMsg
 
-instance SingI (Msg PublicNumber) where
-  sing = SPubKey
+instance SingI s => SingI (Msg s PublicNumber) where
+  sing = SPubKey sing
 
-instance SingI (Msg Params) where
-  sing = SDhParams
+instance SingI s => SingI (Msg s Params) where
+  sing = SDhParams sing
 
 
 data Some (f :: k -> Type) where
@@ -62,8 +63,8 @@ data Some (f :: k -> Type) where
 
 
 data CommsHandle = CommsHandle
-  { msgsToA :: !(TQueue (Some Msg))
-  , msgsToB :: !(TQueue (Some Msg))
+  { msgsToA :: !(TQueue (Some (Msg 'B)))
+  , msgsToB :: !(TQueue (Some (Msg 'A)))
   }
 
 
@@ -89,14 +90,16 @@ aInterpreter :: CommsHandle -> Interpreter 'A Msg IO
 aInterpreter CommsHandle{msgsToA, msgsToB} = Interpreter
   { side = SA
   , send = sendMessage msgsToB
-  , recv = receiveMessage msgsToA
+  , recv = \ _ SB -> receiveMessage msgsToA
   }
 
 bInterpreter :: CommsHandle -> Interpreter 'B Msg IO
 bInterpreter CommsHandle{msgsToA, msgsToB} = Interpreter
   { side = SB
   , send = sendMessage msgsToA
-  , recv = receiveMessage msgsToB
+  , recv = \r -> \case
+      SA -> receiveMessage msgsToB
+      SB -> absurd $ r Refl
   }
 
 mainA :: CommsHandle -> IO SharedKey
@@ -105,15 +108,15 @@ mainA h = runSyncSameMonad (aInterpreter h) sharedSecret
 mainB :: CommsHandle -> IO SharedKey
 mainB h = runSyncSameMonad (bInterpreter h) sharedSecret
 
-receiveMessage :: TQueue (Some Msg) -> Sing (Msg a) -> IO a
+receiveMessage :: TQueue (Some (Msg sender)) -> Sing (Msg sender a) -> IO a
 receiveMessage q s = do
   x <- atomically $ readTQueue q
   case (s, x) of
-    (SPubKey, Some (PubKey pn)) -> pure pn
-    (SDhParams, Some (DhParams p)) -> pure p
+    (SPubKey _, Some (PubKey pn)) -> pure pn
+    (SDhParams _, Some (DhParams p)) -> pure p
     _ -> throwIO $ userError "Unexpected message"
 
-sendMessage :: TQueue (Some Msg) -> Msg a -> IO ()
+sendMessage :: TQueue (Some (Msg side)) -> Msg side a -> IO ()
 sendMessage q m = atomically $ writeTQueue q (Some m)
 
 

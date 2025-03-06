@@ -40,12 +40,12 @@ import Data.Singletons.Decide
  from the outside are either pure, or trivially the same
  (in the latter case, it's best to make the assertion explicit with 'unsafeSync')
 -}
-newtype Sync (s :: k) (msg :: Type -> Type) m a = Sync (Free (SyncAction s msg m) a)
+newtype Sync (s :: k) (msg :: k -> Type -> Type) m a = Sync (Free (SyncAction s msg m) a)
   deriving (Functor, Applicative, Monad)
   -- note that we aren't using FreeT, because this isn't a monad transformer!
 
 data SyncAction (s :: k) msg m next where
-  CallSync :: Sing (s' :: k) -> Sing (msg a) -> (a -> msg a) -> (s :~: s' -> m a) -> (a -> next) -> SyncAction s msg m next
+  CallSync :: Sing (s' :: k) -> Sing (msg s' a) -> (a -> msg s' a) -> (s :~: s' -> m a) -> (a -> next) -> SyncAction s msg m next
   CallPrivate :: Sing (s' :: k) -> (s :~: s' -> m a) -> (Private s s' a -> next) -> SyncAction s msg m next
   CallUnsafeSync :: (Sing s -> m a) -> (a -> next) -> SyncAction s msg m next
 
@@ -59,7 +59,7 @@ fromPrivate :: Private s s a -> a
 fromPrivate (Private f) = f Refl
 
 -- | If we are side @s'@, compute the value and share it.
-sync :: (SingI (msg a), s ~ s' => Functor m) => Sing s' -> (a -> msg a) -> (s ~ s' => m a) -> Sync s msg m a
+sync :: (SingI (msg s' a), s ~ s' => Functor m) => Sing s' -> (a -> msg s' a) -> (s ~ s' => m a) -> Sync s msg m a
 sync sSide (mkMsg :: (a -> msg a)) a = Sync . liftF $ CallSync sSide (sing :: Sing (msg a)) mkMsg (\Refl -> a) id
 
 -- | If we are side @s'@, compute the value, but don't share it.
@@ -74,8 +74,11 @@ unsafeSync f = Sync . liftF $ CallUnsafeSync f id
 
 data Interpreter side msg m = Interpreter
   { side :: !(Sing side)
-  , send :: forall x. msg x -> m ()
-  , recv :: forall x. Sing (msg x) -> m x
+  , send :: forall x. msg side x -> m ()
+  -- Sing (msg sender x) should already have 'Sing sender', but passing in an
+  -- extra 'Sing sender' reduces the number of pattern matches necessary when
+  -- defining 'recv'
+  , recv :: forall x sender. (sender :~: side -> Void) -> Sing sender -> Sing (msg sender x) -> m x
   }
 
 {-
@@ -101,8 +104,8 @@ runSync' itp@Interpreter{side, send, recv} (Sync (Free a)) = case a of
       msg <- f Refl
       send (mkMsg msg)
       runSync' itp (Sync $ next msg)
-    Disproved _ -> do
-      msg <- recv sMsg
+    Disproved r -> do
+      msg <- recv (\Refl -> r Refl) s' sMsg -- if we pass 'r' directly the typechecker dies
       runSync' itp (Sync $ next msg)
   CallPrivate s' f next -> case side %~ s' of
     Proved Refl -> f Refl >>= \x -> runSync' itp . Sync . next $ Private (\Refl -> x)
