@@ -40,3 +40,13 @@ executable diffie-hellman
                     , sync-monad
                     , transformers
     default-language: Haskell2010
+
+executable voidm-example
+    import:           warnings
+    hs-source-dirs:   examples
+    main-is:          VoidM.hs
+    build-depends:    base
+                    , singletons
+                    , sync-monad
+                    , transformers
+    default-language: Haskell2010

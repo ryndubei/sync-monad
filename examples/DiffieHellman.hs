@@ -100,10 +100,10 @@ bInterpreter CommsHandle{msgsToA, msgsToB} = Interpreter
   }
 
 mainA :: CommsHandle -> IO SharedKey
-mainA h = runSync (aInterpreter h) sharedSecret
+mainA h = runSyncSameMonad (aInterpreter h) sharedSecret
 
 mainB :: CommsHandle -> IO SharedKey
-mainB h = runSync (bInterpreter h) sharedSecret
+mainB h = runSyncSameMonad (bInterpreter h) sharedSecret
 
 receiveMessage :: TQueue (Some Msg) -> Sing (Msg a) -> IO a
 receiveMessage q s = do

@@ -8,7 +8,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
-module Control.Monad.Sync (Interpreter(..), Sync, Private, fromPrivate, private, sync, unsafeSync, runSync) where
+module Control.Monad.Sync (Interpreter(..), Sync, Private, fromPrivate, private, sync, unsafeSync, runSync, runSyncSameMonad) where
 
 import Data.Kind
 import Data.Singletons
@@ -59,11 +59,11 @@ fromPrivate :: Private s s a -> a
 fromPrivate (Private f) = f Refl
 
 -- | If we are side @s'@, compute the value and share it.
-sync :: (SingI (msg a), Functor m) => Sing s' -> (a -> msg a) -> (s ~ s' => m a) -> Sync s msg m a
+sync :: (SingI (msg a), s ~ s' => Functor m) => Sing s' -> (a -> msg a) -> (s ~ s' => m a) -> Sync s msg m a
 sync sSide (mkMsg :: (a -> msg a)) a = Sync . liftF $ CallSync sSide (sing :: Sing (msg a)) mkMsg (\Refl -> a) id
 
 -- | If we are side @s'@, compute the value, but don't share it.
-private :: Functor m => Sing s' -> Proxy a -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
+private :: (s ~ s' => Functor m) => Sing s' -> Proxy a -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
 private sSide _ a = Sync . liftF $ CallPrivate sSide (\Refl -> a) id
 
 {- | Compute the value independently on all sides, and assert that it is the
@@ -81,9 +81,17 @@ data Interpreter side msg m = Interpreter
 {-
  Carry out a Sync computation, after specifying the side we are on and how to
  receive/send messages.
+
+ Note that we can use a different monad on each side.
 -}
-runSync :: (Monad m, SDecide k) => Interpreter (side :: k) msg m -> (forall (s :: k). Sync s msg m a) -> m a
+runSync :: (Monad m, SDecide k, m ~ m' side) => Interpreter (side :: k) msg m -> (forall (s :: k). Sync s msg (m' s) a) -> m a
 runSync = runSync'
+
+{-
+ Like 'runSync', but using the same monad on all sides.
+-}
+runSyncSameMonad :: (Monad m, SDecide k) => Interpreter (side :: k) msg m -> (forall (s :: k). Sync s msg m a) -> m a
+runSyncSameMonad = runSync'
 
 runSync' :: (Monad m, SDecide k) => Interpreter (side :: k) msg m -> Sync side msg m a -> m a
 runSync' _ (Sync (Pure a)) = pure a
