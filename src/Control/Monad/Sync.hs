@@ -19,7 +19,7 @@ import Data.Singletons.Decide
 
 {- | @Sync s msg m a@ represents shared knowledge of type 'a', originating
  from a computation in the monad 'm', that may be sent using a message of
- type 'msg a', where 's' is the side that we are actually on.
+ type 'msg s a', where 's' is the side that we are actually on.
  (we are doing something like the ST trick here)
 
  When a pure value is introduced with 'pure', it is computed on both sides
