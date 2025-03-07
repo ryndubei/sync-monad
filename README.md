@@ -7,6 +7,9 @@ really need to use GHC 8.10.7.
 
 ## Example: Diffie-Hellman key exchange
 
+See `examples/DiffieHellman.hs` for a fully-implemented example that is also
+more likely to be kept up to date.
+
 ```haskell
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
@@ -18,26 +21,27 @@ really need to use GHC 8.10.7.
 import Crypto.PubKey.DH
 -- singletons
 import Data.Singletons
--- singletons-th
-import Data.Singletons.TH
 -- sync-monad
 import Control.Monad.Sync
 
 data Side = A | B
 
-data Msg a where
-    PubKey :: PublicNumber -> Msg PublicNumber
-    DhParams :: Params -> Msg Params
+data Msg (s :: Side) a where
+    PubKey :: PublicNumber -> Msg s PublicNumber
+    DhParams :: Params -> Msg 'A Params
 
-$(genSingletons [''Side, ''Msg])
+data SSide = SA | SB
+data SMsg a where
+  SPubKey :: Sing s -> SMsg (Msg s PublicNumber)
+  SDhParams :: SMsg (Msg 'A Params)
 
-$(singDecideInstance ''Side)
+-- (insert SingI, SDecide boilerplate here)
 
 mainA :: IO SharedKey
-mainA = runSync SA receiveMessageB2A sendMessageA2B sharedSecret
+mainA = runSyncSameMonad itpA sharedSecret
 
 mainB :: IO SharedKey
-mainB = runSync SB receiveMessageA2B sendMessageB2A sharedSecret
+mainB = runSyncSameMonad itpB sharedSecret
 
 sharedSecret :: Sync (s :: Side) Msg IO SharedKey
 sharedSecret = do
@@ -57,11 +61,17 @@ sharedSecret = do
     SA -> pure $ getShared params (fromPrivate privA) pubB
     SB -> pure $ getShared params (fromPrivate privB) pubA
 
-receiveMessageA2B, receiveMessageB2A :: forall x. SMsg x -> IO x
-receiveMessageA2B = error "unimplemented"
-receiveMessageB2A = error "unimplemented"
+itpA :: Interpreter 'A Msg IO
+itpA = Interpreter
+  { side = SA
+  , recv = error "unimplemented"
+  , send = error "unimplemented"
+  }
 
-sendMessageA2B, sendMessageB2A :: forall x. Msg x -> IO ()
-sendMessageA2B = error "unimplemented"
-sendMessageB2A = error "unimplemented"
+itpB :: Interpreter 'B Msg IO
+itpB = Interpreter
+  { side = SB
+  , recv = error "unimplemented"
+  , send = error "unimplemented"
+  }
 ```
