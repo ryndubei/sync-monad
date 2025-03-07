@@ -1,6 +1,5 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -59,11 +58,11 @@ fromPrivate :: Private s s a -> a
 fromPrivate (Private f) = f Refl
 
 -- | If we are side @s'@, compute the value and share it.
-sync :: (SingI (msg s' a), s ~ s' => Functor m) => Sing s' -> (a -> msg s' a) -> (s ~ s' => m a) -> Sync s msg m a
+sync :: SingI (msg s' a) => Sing s' -> (a -> msg s' a) -> (s ~ s' => m a) -> Sync s msg m a
 sync sSide (mkMsg :: (a -> msg a)) a = Sync . liftF $ CallSync sSide (sing :: Sing (msg a)) mkMsg (\Refl -> a) id
 
 -- | If we are side @s'@, compute the value, but don't share it.
-private :: (s ~ s' => Functor m) => Sing s' -> Proxy a -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
+private :: Sing s' -> Proxy a -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
 private sSide _ a = Sync . liftF $ CallPrivate sSide (\Refl -> a) id
 
 {- | Compute the value independently on all sides, and assert that it is the
