@@ -77,7 +77,7 @@ data Interpreter side msg m = Interpreter
   -- Sing (msg sender x) should already have 'Sing sender', but passing in an
   -- extra 'Sing sender' reduces the number of pattern matches necessary when
   -- defining 'recv'
-  , recv :: forall x sender. (sender :~: side -> Void) -> Sing sender -> Sing (msg sender x) -> m x
+  , recv :: forall x sender. (side :~: sender -> Void) -> Sing sender -> Sing (msg sender x) -> m x
   }
 
 {-
@@ -104,7 +104,7 @@ runSync' itp@Interpreter{side, send, recv} (Sync (Free a)) = case a of
       send (mkMsg msg)
       runSync' itp (Sync $ next msg)
     Disproved r -> do
-      msg <- recv (\Refl -> r Refl) s' sMsg -- if we pass 'r' directly the typechecker dies
+      msg <- recv r s' sMsg
       runSync' itp (Sync $ next msg)
   CallPrivate s' f next -> case side %~ s' of
     Proved Refl -> f Refl >>= \x -> runSync' itp . Sync . next $ Private (\Refl -> x)
