@@ -15,7 +15,6 @@ import Control.Concurrent.Async
 import Control.Monad.Trans.Cont
 import Data.Singletons
 import Control.Concurrent.STM
-import Data.Kind
 import Control.Monad.Trans.Class
 import Control.Exception
 import Data.Singletons.Decide
@@ -42,29 +41,12 @@ instance SDecide Side where
   (%~) SB SA = Disproved $ \case {}
 
 data Msg s a where
-  PubKey :: PublicNumber -> Msg s PublicNumber
-  DhParams :: Params -> Msg s Params
-
-data SMsg (a :: Type) where
-  SPubKey :: Sing s -> SMsg (Msg s PublicNumber)
-  SDhParams :: Sing s -> SMsg (Msg s Params)
-
-type instance Sing = SMsg
-
-instance SingI s => SingI (Msg s PublicNumber) where
-  sing = SPubKey sing
-
-instance SingI s => SingI (Msg s Params) where
-  sing = SDhParams sing
-
-
-data Some (f :: k -> Type) where
-  Some :: f a -> Some f
-
+  PubKey :: Msg s PublicNumber
+  DhParams :: Msg s Params
 
 data CommsHandle = CommsHandle
-  { msgsToA :: !(TQueue (Some (Msg 'B)))
-  , msgsToB :: !(TQueue (Some (Msg 'A)))
+  { msgsToA :: !(TQueue (Either PublicNumber Params))
+  , msgsToB :: !(TQueue (Either PublicNumber Params))
   }
 
 
@@ -108,16 +90,17 @@ mainA h = runSyncSameMonad (aInterpreter h) sharedSecret
 mainB :: CommsHandle -> IO SharedKey
 mainB h = runSyncSameMonad (bInterpreter h) sharedSecret
 
-receiveMessage :: TQueue (Some (Msg sender)) -> Sing (Msg sender a) -> IO a
+receiveMessage :: TQueue (Either PublicNumber Params) -> Msg sender a -> IO a
 receiveMessage q s = do
   x <- atomically $ readTQueue q
   case (s, x) of
-    (SPubKey _, Some (PubKey pn)) -> pure pn
-    (SDhParams _, Some (DhParams p)) -> pure p
+    (PubKey, Left pn) -> pure pn
+    (DhParams, Right p) -> pure p
     _ -> throwIO $ userError "Unexpected message"
 
-sendMessage :: TQueue (Some (Msg side)) -> Msg side a -> IO ()
-sendMessage q m = atomically $ writeTQueue q (Some m)
+sendMessage :: TQueue (Either PublicNumber Params) -> Msg side a -> a -> IO ()
+sendMessage q DhParams a = atomically $ writeTQueue q (Right a)
+sendMessage q PubKey a = atomically $ writeTQueue q (Left a)
 
 
 -- | Exchange a DH shared secret between sides A and B

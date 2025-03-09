@@ -27,13 +27,10 @@ import Control.Monad.Sync
 data Side = A | B
 
 data Msg (s :: Side) a where
-    PubKey :: PublicNumber -> Msg s PublicNumber
-    DhParams :: Params -> Msg 'A Params
+    PubKey :: Msg s PublicNumber
+    DhParams :: Msg 'A Params
 
 data SSide = SA | SB
-data SMsg a where
-  SPubKey :: Sing s -> SMsg (Msg s PublicNumber)
-  SDhParams :: SMsg (Msg 'A Params)
 
 -- (insert SingI, SDecide boilerplate here)
 

@@ -16,7 +16,6 @@ import Data.Void
 import Data.Type.Bool
 import Data.Type.Equality
 import Data.Singletons
-import Data.Kind
 import Data.Singletons.Decide
 
 type VoidM = Reader Void
@@ -47,14 +46,7 @@ instance SDecide Side where
   SB %~ SA = Disproved $ \case {}
 
 data Msg s a where
-  Msg :: Int -> Msg s Int
-
-data SMsg (a :: Type) where
-  SMsg :: Sing s -> SMsg (Msg s Int)
-
-type instance Sing = SMsg
-instance SingI s => SingI (Msg s Int) where
-  sing = SMsg sing
+  Msg :: Msg s Int
 
 newtype AM s a = AM { unam :: If (s == 'A) (IO a) (VoidM a) }
 
@@ -76,12 +68,10 @@ chor = do
 itp :: Interpreter 'A Msg (AM 'A)
 itp = Interpreter
   { side = SA
-  , send = \case
-      Msg i -> AM (putStrLn $ "Pretending to send message: " ++ show i)
-  , recv = \ _ SB -> \case
-      SMsg _ -> do
-        AM (putStrLn "Pretending to receive message...")
-        pure 27
+  , send = \Msg i -> AM (putStrLn $ "Pretending to send message: " ++ show i)
+  , recv = \ _ SB Msg -> do
+      AM (putStrLn "Pretending to receive message...")
+      pure 27
   }
 
 main :: IO ()

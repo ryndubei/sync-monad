@@ -17,8 +17,8 @@ import Control.Monad.Free
 import Data.Singletons.Decide
 
 {- | @Sync s msg m a@ represents shared knowledge of type 'a', originating
- from a computation in the monad 'm', that may be sent using a message of
- type 'msg s a', where 's' is the side that we are actually on.
+ from a computation in the monad 'm', that may be sent using a message
+ tagged by 'msg s a', where 's' is the side that we are actually on.
  (we are doing something like the ST trick here)
 
  When a pure value is introduced with 'pure', it is computed on both sides
@@ -44,7 +44,7 @@ newtype Sync (s :: k) (msg :: k -> Type -> Type) m a = Sync (Free (SyncAction s 
   -- note that we aren't using FreeT, because this isn't a monad transformer!
 
 data SyncAction (s :: k) msg m next where
-  CallSync :: Sing (s' :: k) -> Sing (msg s' a) -> (a -> msg s' a) -> (s :~: s' -> m a) -> (a -> next) -> SyncAction s msg m next
+  CallSync :: Sing (s' :: k) -> msg s' a -> (s :~: s' -> m a) -> (a -> next) -> SyncAction s msg m next
   CallPrivate :: Sing (s' :: k) -> (s :~: s' -> m a) -> (Private s s' a -> next) -> SyncAction s msg m next
   CallUnsafeSync :: (Sing s -> m a) -> (a -> next) -> SyncAction s msg m next
 
@@ -58,8 +58,8 @@ fromPrivate :: Private s s a -> a
 fromPrivate (Private f) = f Refl
 
 -- | If we are side @s'@, compute the value and share it.
-sync :: SingI (msg s' a) => Sing s' -> (a -> msg s' a) -> (s ~ s' => m a) -> Sync s msg m a
-sync sSide (mkMsg :: (a -> msg a)) a = Sync . liftF $ CallSync sSide (sing :: Sing (msg a)) mkMsg (\Refl -> a) id
+sync :: Sing s' -> msg s' a -> (s ~ s' => m a) -> Sync s msg m a
+sync sSide msg a = Sync . liftF $ CallSync sSide msg (\Refl -> a) id
 
 -- | If we are side @s'@, compute the value, but don't share it.
 private :: Sing s' -> Proxy a -> (s ~ s' => m a) -> Sync s msg m (Private s s' a)
@@ -73,11 +73,11 @@ unsafeSync f = Sync . liftF $ CallUnsafeSync f id
 
 data Interpreter side msg m = Interpreter
   { side :: !(Sing side)
-  , send :: forall x. msg side x -> m ()
+  , send :: forall x. msg side x -> x -> m ()
   -- Sing (msg sender x) should already have 'Sing sender', but passing in an
   -- extra 'Sing sender' reduces the number of pattern matches necessary when
   -- defining 'recv'
-  , recv :: forall x sender. (side :~: sender -> Void) -> Sing sender -> Sing (msg sender x) -> m x
+  , recv :: forall x sender. (side :~: sender -> Void) -> Sing sender -> msg sender x -> m x
   }
 
 {-
@@ -98,14 +98,14 @@ runSyncSameMonad = runSync'
 runSync' :: (Monad m, SDecide k) => Interpreter (side :: k) msg m -> Sync side msg m a -> m a
 runSync' _ (Sync (Pure a)) = pure a
 runSync' itp@Interpreter{side, send, recv} (Sync (Free a)) = case a of
-  CallSync s' sMsg mkMsg f next -> case side %~ s' of
+  CallSync s' msg f next -> case side %~ s' of
     Proved Refl -> do
-      msg <- f Refl
-      send (mkMsg msg)
-      runSync' itp (Sync $ next msg)
+      x <- f Refl
+      send msg x
+      runSync' itp (Sync $ next x)
     Disproved r -> do
-      msg <- recv r s' sMsg
-      runSync' itp (Sync $ next msg)
+      x <- recv r s' msg
+      runSync' itp (Sync $ next x)
   CallPrivate s' f next -> case side %~ s' of
     Proved Refl -> f Refl >>= \x -> runSync' itp . Sync . next $ Private (\Refl -> x)
     Disproved g -> runSync' itp (Sync $ next (Private (absurd . g)))
